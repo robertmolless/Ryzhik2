@@ -4,6 +4,24 @@
 // Full game implementation
 // ============================================================
 
+// Polyfill for CanvasRenderingContext2D.roundRect (Chrome < 99, older Safari/Firefox)
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, radii) {
+    const r = Array.isArray(radii) ? radii[0] : (radii || 0);
+    const r2 = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
+    this.moveTo(x + r2, y);
+    this.lineTo(x + w - r2, y);
+    this.quadraticCurveTo(x + w, y, x + w, y + r2);
+    this.lineTo(x + w, y + h - r2);
+    this.quadraticCurveTo(x + w, y + h, x + w - r2, y + h);
+    this.lineTo(x + r2, y + h);
+    this.quadraticCurveTo(x, y + h, x, y + h - r2);
+    this.lineTo(x, y + r2);
+    this.quadraticCurveTo(x, y, x + r2, y);
+    this.closePath();
+  };
+}
+
 // ============================================================
 // TELEGRAM BRIDGE
 // ============================================================
@@ -3186,11 +3204,22 @@ class Game {
   }
 
   _setupButtons() {
-    // Simple, reliable button handler for iOS and desktop
+    // Reliable button handler for iOS, Android, and desktop
     const on = (id, fn) => {
       const el = document.getElementById(id);
       if (!el) return;
-      el.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
+      let touched = false;
+      el.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        touched = true;
+        fn();
+        setTimeout(() => { touched = false; }, 400);
+      }, { passive: false });
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!touched) fn();
+      });
     };
 
     // Main menu
@@ -3220,10 +3249,21 @@ class Game {
 
     // Close buttons with data-close
     document.querySelectorAll('[data-close]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      let closeTouched = false;
+      btn.addEventListener('touchend', (e) => {
+        e.preventDefault();
         e.stopPropagation();
+        closeTouched = true;
         if(this.audio)this.audio.uiClick();
         this.ui.closeScreen(btn.dataset.close);
+        setTimeout(() => { closeTouched = false; }, 400);
+      }, { passive: false });
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!closeTouched) {
+          if(this.audio)this.audio.uiClick();
+          this.ui.closeScreen(btn.dataset.close);
+        }
       });
     });
 
@@ -3606,18 +3646,19 @@ class Game {
 
   _pickupItem(wi) {
     wi.collected = true;
-    const item = ITEMS[wi.itemId];
-    this.inventory.add(wi.itemId);
+    const itemId = wi.itemId || wi.item;
+    const item = ITEMS[itemId];
+    this.inventory.add(itemId);
     this.audio.pickup();
     this.telegram.haptic('medium');
-    this.ui.notify(`✨ Поднял: ${item?.name || wi.itemId}`);
+    this.ui.notify(`✨ Поднял: ${item?.name || itemId}`);
     this.player.stats.curiosity = Math.min(100, this.player.stats.curiosity + 3);
 
     // Quest progress
     Object.values(this.quests.active).forEach(aq => {
       const qdata = QUESTS[aq.id];
-      if (qdata?.collectItem === wi.itemId) {
-        this.quests.progress('collect', wi.itemId, 1, {});
+      if (qdata?.collectItem === itemId) {
+        this.quests.progress('collect', itemId, 1, {});
       }
     });
 
@@ -3640,7 +3681,7 @@ class Game {
       this.player.isSleeping = true;
       setTimeout(() => { this.player.isSleeping = false; }, 3000);
     } else if (obj.id === 'pond') {
-      if (this.inventory.has('fishing_rod') || this.quests.active.find(a => a.id === 'fishing')) {
+      if (this.inventory.has('fishing_rod') || Object.values(this.quests.active).find(a => a.id === 'fishing')) {
         this.minigame.start('fishing');
       } else {
         this.ui.notify('🐟 Рыжик смотрит на пруд... Нужна удочка!');
@@ -3679,11 +3720,14 @@ class Game {
   _updateNPCMovement(dt) {
     const tod = this.time.getTimeOfDay();
     this.npcs.forEach(npc => {
-      // Update target based on schedule
-      const schedulePos = npc.schedule?.[tod];
-      if (schedulePos) {
-        npc.targetX = schedulePos.x;
-        npc.targetY = schedulePos.y;
+      // Update target based on schedule (schedule values are zone names)
+      const scheduleZone = npc.schedule?.[tod];
+      if (scheduleZone && scheduleZone !== 'inside' && scheduleZone !== 'none') {
+        const zoneData = ZONES[scheduleZone];
+        if (zoneData) {
+          npc.targetX = zoneData.x;
+          npc.targetY = zoneData.y;
+        }
       }
 
       // Move timer
@@ -3802,7 +3846,7 @@ class Game {
   }
 
   _checkStoryProgress() {
-    const completed = this.quests.completed.length;
+    const completed = this.quests.completed.size;
     if (completed >= 5 && this.storyProgress < 1) {
       this.storyProgress = 1;
       this.dialogue.queue([{ speaker: 'ryzhik', text: 'Я начинаю узнавать все секреты этого двора...', portrait: 'ryzhik' }]);
