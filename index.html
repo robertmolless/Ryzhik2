@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Рыжик: Тайна загородного дома</title>
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="style.css">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+<div id="game-container">
+  <canvas id="gameCanvas"></canvas>
+  <!-- Mobile UI overlay -->
+  <div id="mobile-ui">
+    <div id="joystick-zone">
+      <div id="joystick-base">
+        <div id="joystick-knob"></div>
+      </div>
+    </div>
+    <div id="action-buttons">
+      <div id="btn-meow" class="action-btn" data-action="meow">
+        <span class="btn-icon">🐱</span>
+        <span class="btn-label">Мяу</span>
+      </div>
+      <div id="btn-action" class="action-btn primary" data-action="interact">
+        <span class="btn-icon">✋</span>
+        <span class="btn-label" id="action-hint">Действие</span>
+      </div>
+    </div>
+    <div id="top-buttons">
+      <div id="btn-map" class="top-btn" data-action="map">🗺</div>
+      <div id="btn-inventory" class="top-btn" data-action="inventory">🎒</div>
+      <div id="btn-quests" class="top-btn" data-action="quests">📜</div>
+      <div id="btn-pause" class="top-btn" data-action="pause">⏸</div>
+    </div>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div id="stats-panel">
+      <div class="stat-item" id="stat-hunger">
+        <span class="stat-icon">🐟</span>
+        <div class="stat-bar"><div class="stat-fill" id="fill-hunger"></div></div>
+      </div>
+      <div class="stat-item" id="stat-energy">
+        <span class="stat-icon">⚡</span>
+        <div class="stat-bar"><div class="stat-fill" id="fill-energy"></div></div>
+      </div>
+      <div class="stat-item" id="stat-mood">
+        <span class="stat-icon">😺</span>
+        <div class="stat-bar"><div class="stat-fill" id="fill-mood"></div></div>
+      </div>
+    </div>
+    <div id="time-panel">
+      <div id="time-icon">☀️</div>
+      <div id="time-text">Утро</div>
+      <div id="day-text">День 1</div>
+    </div>
+    <div id="minimap-container">
+      <canvas id="minimap"></canvas>
+    </div>
+    <div id="quest-hint"></div>
+    <div id="notification-area"></div>
+  </div>
+
+  <!-- Screens -->
+  <div id="screen-main-menu" class="screen active">
+    <div class="menu-bg"></div>
+    <div class="menu-content">
+      <div class="game-title">
+        <div class="title-cat"></div>
+        <h1>Рыжик</h1>
+        <p class="subtitle">Тайна загородного дома</p>
+      </div>
+      <div class="menu-buttons">
+        <button class="menu-btn primary" id="btn-continue" style="display:none">▶ Продолжить</button>
+        <button class="menu-btn primary" id="btn-new-game">🐾 Новая игра</button>
+        <button class="menu-btn" id="btn-settings">⚙️ Настройки</button>
+        <button class="menu-btn" id="btn-about">💛 Об игре</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-dialogue" class="screen">
+    <div id="dialogue-portrait-area">
+      <canvas id="portrait-canvas" width="80" height="80"></canvas>
+    </div>
+    <div id="dialogue-content">
+      <div id="dialogue-name"></div>
+      <div id="dialogue-text"></div>
+      <div id="dialogue-choices"></div>
+      <div id="dialogue-tap">Нажмите, чтобы продолжить...</div>
+    </div>
+  </div>
+
+  <div id="screen-inventory" class="screen">
+    <div class="screen-header">
+      <h2>🎒 Инвентарь</h2>
+      <button class="close-btn" data-close="inventory">✕</button>
+    </div>
+    <div id="inventory-grid"></div>
+    <div id="item-detail"></div>
+  </div>
+
+  <div id="screen-map" class="screen">
+    <div class="screen-header">
+      <h2>🗺️ Карта</h2>
+      <button class="close-btn" data-close="map">✕</button>
+    </div>
+    <canvas id="map-canvas"></canvas>
+    <div id="map-legend"></div>
+  </div>
+
+  <div id="screen-quests" class="screen">
+    <div class="screen-header">
+      <h2>📜 Задания</h2>
+      <button class="close-btn" data-close="quests">✕</button>
+    </div>
+    <div id="quest-tabs">
+      <button class="quest-tab active" data-tab="active">Активные</button>
+      <button class="quest-tab" data-tab="completed">Выполнены</button>
+    </div>
+    <div id="quest-list"></div>
+  </div>
+
+  <div id="screen-pause" class="screen">
+    <div class="pause-content">
+      <h2>⏸ Пауза</h2>
+      <button class="menu-btn" id="btn-resume">▶ Продолжить</button>
+      <button class="menu-btn" id="btn-save">💾 Сохранить</button>
+      <button class="menu-btn" id="btn-settings2">⚙️ Настройки</button>
+      <button class="menu-btn danger" id="btn-main-menu">🏠 Главное меню</button>
+    </div>
+  </div>
+
+  <div id="screen-settings" class="screen">
+    <div class="screen-header">
+      <h2>⚙️ Настройки</h2>
+      <button class="close-btn" data-close="settings">✕</button>
+    </div>
+    <div class="settings-list">
+      <div class="setting-row">
+        <label>Музыка</label>
+        <input type="range" id="set-music" min="0" max="100" value="70">
+      </div>
+      <div class="setting-row">
+        <label>Звуки</label>
+        <input type="range" id="set-sfx" min="0" max="100" value="80">
+      </div>
+      <div class="setting-row">
+        <label>Вибрация</label>
+        <div class="toggle" id="set-vibration" data-on="true">ВКЛ</div>
+      </div>
+      <div class="setting-row">
+        <label>Качество</label>
+        <select id="set-quality">
+          <option value="low">Низкое</option>
+          <option value="med" selected>Среднее</option>
+          <option value="high">Высокое</option>
+        </select>
+      </div>
+      <button class="menu-btn danger" id="btn-reset">🗑 Сбросить прогресс</button>
+    </div>
+  </div>
+
+  <div id="screen-achievements" class="screen">
+    <div class="screen-header">
+      <h2>🏆 Достижения</h2>
+      <button class="close-btn" data-close="achievements">✕</button>
+    </div>
+    <div id="achievements-grid"></div>
+  </div>
+
+  <div id="screen-about" class="screen">
+    <div class="screen-header">
+      <h2>💛 Об игре</h2>
+      <button class="close-btn" data-close="about">✕</button>
+    </div>
+    <div class="about-content">
+      <p>🐱 <strong>Рыжик: Тайна загородного дома</strong></p>
+      <p>Уютная 2D-приключение про доброго рыжего кота, который живёт возле загородного дома и помогает всем вокруг.</p>
+      <p>Исследуй двор, знакомься с людьми, раскрывай тайны и верни уют старому дому.</p>
+      <br>
+      <p>Управление на телефоне:</p>
+      <p>🕹 Джойстик — движение</p>
+      <p>✋ Кнопка — действие / разговор</p>
+      <p>🐱 Мяу — мяукнуть</p>
+      <p>📜 Квесты, 🎒 Инвентарь, 🗺️ Карта</p>
+    </div>
+  </div>
+
+  <div id="screen-minigame" class="screen">
+    <canvas id="minigame-canvas"></canvas>
+    <div id="minigame-ui">
+      <div id="minigame-score"></div>
+      <button id="btn-minigame-close" class="close-btn">✕</button>
+    </div>
+  </div>
+
+  <!-- Notification toast -->
+  <div id="toast"></div>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>

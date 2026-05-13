@@ -1,0 +1,11 @@
+{
+  "name": "Рыжик: Тайна загородного дома",
+  "short_name": "Рыжик",
+  "description": "Уютная приключенческая игра про доброго рыжего кота",
+  "start_url": "./index.html",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#2d4a1e",
+  "theme_color": "#f4a261",
+  "icons": []
+}
