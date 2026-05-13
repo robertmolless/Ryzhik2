@@ -2653,7 +2653,7 @@ class World {
     Draw.drawGrass(ctx, 0, ch*0.35 + cam.y, this.width, this.height - ch*0.35, 42);
 
     // Zones visual
-    this._drawZoneVisuals(ctx, zones, timeSystem);
+    this._drawZoneVisuals(ctx, zones, timeSystem, this._openedZones || []);
 
     // Objects
     this._drawWorldObjects(ctx, zones, timeSystem, frame);
@@ -2719,11 +2719,11 @@ class World {
     Draw.drawLightingOverlay(ctx, tod, cw, ch, 0, 0);
   }
 
-  _drawZoneVisuals(ctx, zones, ts) {
+  _drawZoneVisuals(ctx, zones, ts, openedZones) {
     // Pond
     Draw.drawPond(ctx, 1850, 950, 200, 130, Date.now());
     // Greenhouse
-    const ghUnlocked = zones.greenhouse?.unlocked;
+    const ghUnlocked = (openedZones||[]).includes('greenhouse') || zones.greenhouse?.unlocked;
     Draw.drawGreenhouse(ctx, 2200, 1000, ghUnlocked);
     // Barn
     Draw.drawBarn(ctx, 1300, 1100);
@@ -3404,7 +3404,15 @@ class Game {
 
     // Hide main menu
     const mainMenu = document.getElementById('screen-main-menu');
-    if (mainMenu) mainMenu.style.display = 'none';
+    if (mainMenu) {
+      mainMenu.style.display = 'none';
+      mainMenu.classList.remove('active');
+    }
+    // Close all screens
+    document.querySelectorAll('.screen').forEach(s => {
+      s.style.display = 'none';
+      s.classList.remove('active');
+    });
 
     // Show game UI
     document.getElementById('mobile-ui').style.display = 'block';
@@ -3864,8 +3872,8 @@ class Game {
     if (!this.running || this.minigame.active) return;
     if (this.paused && !this.dialogue.isActive()) return;
 
-    this._update(dt);
-    this._render();
+    try { this._update(dt); } catch(e) { console.error('[update]', e); }
+    try { this._render(); } catch(e) { console.error('[render]', e); }
   }
 
   _update(dt) {
@@ -3943,13 +3951,10 @@ class Game {
     const h = this.canvas.height;
 
     ctx.clearRect(0, 0, w, h);
-    ctx.save();
-    ctx.translate(-this.camera.x, -this.camera.y);
 
-    // World
+    // World (handles its own camera transform internally)
+    this.world._openedZones = this.openedZones;
     this.world.render(ctx, this.camera, this.time, this.weather, ZONES, this.worldItems, this.npcs, this.player, performance.now()/1000);
-
-    ctx.restore();
 
     // Camera shake
     if (this.camera.shake > 0) {
