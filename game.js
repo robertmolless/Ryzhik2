@@ -141,10 +141,10 @@ class SaveSystem {
 // GAME DATA: ITEMS
 // ============================================================
 const ITEMS = {
-  bowl: { id:'bowl', name:'Миска', icon:'🥣', desc:'Старая миска Рыжика. Нужно вернуть на место.', rarity:'common' },
-  fish: { id:'fish', name:'Рыбка', icon:'🐟', desc:'Свежая рыбка. Рыжик любит рыбу.', rarity:'common' },
-  apple: { id:'apple', name:'Яблоко', icon:'🍎', desc:'Румяное яблоко из сада.', rarity:'common' },
-  feather: { id:'feather', name:'Перо', icon:'🪶', desc:'Красивое перо, найденное во дворе.', rarity:'common' },
+  bowl: { id:'bowl', name:'Миска', icon:'🥣', desc:'Старая миска Рыжика. Нужно вернуть на место.', rarity:'common', use:'quest' },
+  fish: { id:'fish', name:'Рыбка', icon:'🐟', desc:'Свежая рыбка. Рыжик любит рыбу.', rarity:'common', use:'food', hunger:40 },
+  apple: { id:'apple', name:'Яблоко', icon:'🍎', desc:'Румяное яблоко из сада.', rarity:'common', use:'food', hunger:20 },
+  feather: { id:'feather', name:'Перо', icon:'🪶', desc:'Красивое перо, найденное во дворе.', rarity:'common', use:'quest' },
   yarn: { id:'yarn', name:'Клубок', icon:'🧶', desc:'Клубок шерсти — отличная игрушка.', rarity:'common' },
   barn_key: { id:'barn_key', name:'Ключ от сарая', icon:'🗝️', desc:'Старый ключ. Подходит к замку сарая.', rarity:'uncommon' },
   coin: { id:'coin', name:'Старая монета', icon:'🪙', desc:'Потёртая монета непонятного происхождения.', rarity:'uncommon' },
@@ -158,7 +158,7 @@ const ITEMS = {
   toy_mouse: { id:'toy_mouse', name:'Игрушечная мышь', icon:'🐭', desc:'Мягкая игрушка. Рыжик в восторге.', rarity:'common' },
   rare_leaf: { id:'rare_leaf', name:'Редкий лист', icon:'🍃', desc:'Лист необычной формы.', rarity:'uncommon' },
   button: { id:'button', name:'Пуговица', icon:'🔵', desc:'Синяя пуговица. Может быть от чьей-то одежды.', rarity:'common' },
-  dry_food: { id:'dry_food', name:'Сухой корм', icon:'🍪', desc:'Кошачий корм. Восстанавливает сытость.', rarity:'common', effect:{stat:'hunger',value:30} },
+  dry_food: { id:'dry_food', name:'Сухой корм', icon:'🍪', desc:'Кошачий корм. Восстанавливает сытость.', rarity:'common', use:'food', hunger:30 },
   star_acorn: { id:'star_acorn', name:'Звёздный жёлудь', icon:'⭐', desc:'Жёлудь, упавший в звёздную ночь. Очень редкий.', rarity:'legendary' },
   sun_bell: { id:'sun_bell', name:'Солнечный колокольчик', icon:'🌟', desc:'Символ тепла, дружбы и дома. Главная тайна теплицы.', rarity:'legendary' },
   cassette: { id:'cassette', name:'Кассета Лёхи', icon:'📼', desc:'Старая аудиокассета. Лёха её ищет.', rarity:'uncommon' },
@@ -2332,21 +2332,107 @@ class UIManager {
     const grid = document.getElementById('inventory-grid');
     if (!grid) return;
     grid.innerHTML = '';
+    this._selectedItemId = null;
     const items = inv.getAll();
     items.forEach(item => {
       const slot = document.createElement('div');
       slot.className = 'inv-slot';
-      slot.innerHTML = `<span class="item-icon">${item.icon}</span><span class="item-name">${item.name}</span>${item.count>1?`<span class="item-count">×${item.count}</span>`:''}`;
-      slot.addEventListener('click', () => {
+      slot.innerHTML = `<span class="item-icon">${item.icon||'📦'}</span><span class="item-name">${item.name||item.id}</span>${item.count>1?`<span class="item-count">×${item.count}</span>`:''}`;
+      const selectItem = () => {
         document.querySelectorAll('.inv-slot').forEach(s=>s.classList.remove('selected'));
         slot.classList.add('selected');
+        this._selectedItemId = item.id;
+        // Show use panel
+        const pan = document.getElementById('item-use-panel');
+        const nameEl = document.getElementById('item-use-name');
+        const descEl = document.getElementById('item-use-desc');
+        if (pan) pan.classList.add('show');
+        if (nameEl) nameEl.textContent = `${item.icon||'📦'} ${item.name||item.id}`;
+        if (descEl) descEl.textContent = item.desc || 'Предмет для квеста или использования.';
+        // Also update detail area
         const det = document.getElementById('item-detail');
-        if (det) det.innerHTML = `<strong>${item.icon} ${item.name}</strong><br>${item.desc}`;
-      });
+        if (det) det.innerHTML = `<strong>${item.icon||'📦'} ${item.name||item.id}</strong><br><span style="color:rgba(255,255,255,0.6)">${item.desc||''}</span>`;
+      };
+      let touched = false;
+      slot.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        touched = true;
+        selectItem();
+        setTimeout(() => { touched = false; }, 400);
+      }, { passive: false });
+      slot.addEventListener('click', () => { if (!touched) selectItem(); });
       grid.appendChild(slot);
     });
     if (!items.length) {
-      grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#888;padding:20px">Пусто. Исследуй двор, чтобы найти предметы!</div>';
+      grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:rgba(255,255,255,0.4);padding:40px 20px;font-size:14px">🐾 Инвентарь пуст.<br>Исследуй двор — ищи предметы!</div>';
+    }
+    this._hideItemPanel();
+  }
+  _hideItemPanel() {
+    const pan = document.getElementById('item-use-panel');
+    if (pan) pan.classList.remove('show');
+    this._selectedItemId = null;
+    document.querySelectorAll('.inv-slot').forEach(s=>s.classList.remove('selected'));
+  }
+  _useSelectedItem(game) {
+    const id = this._selectedItemId;
+    if (!id || !game) return;
+    const item = ITEMS[id];
+    if (!item) return;
+    // Apply item effects
+    let used = false;
+    if (item.use === 'food') {
+      game.player.stats.hunger = Math.min(100, game.player.stats.hunger + (item.hunger||30));
+      game.player.stats.mood   = Math.min(100, game.player.stats.mood + 5);
+      this.notify(`🍽 ${item.name} съеден! Сытость +${item.hunger||30}`);
+      game.inventory.remove(id);
+      used = true;
+    } else if (item.use === 'energy') {
+      game.player.stats.energy = Math.min(100, game.player.stats.energy + (item.energy||20));
+      this.notify(`⚡ ${item.name} — энергия восстановлена!`);
+      game.inventory.remove(id);
+      used = true;
+    } else if (item.use === 'mood') {
+      game.player.stats.mood = Math.min(100, game.player.stats.mood + (item.mood||15));
+      this.notify(`😺 ${item.name} — настроение улучшилось!`);
+      game.inventory.remove(id);
+      used = true;
+    } else if (item.use === 'quest') {
+      // Try to progress quests
+      Object.values(game.quests.active).forEach(aq => {
+        const qd = QUESTS[aq.id];
+        if (!qd) return;
+        const step = qd.steps[aq.stepIndex];
+        if (step && (step.target === id || step.target === `give:${id}`)) {
+          game.quests.progress('collect', id, 1, {});
+          this.notify(`✅ Предмет использован для задания!`);
+          game.inventory.remove(id);
+          used = true;
+        }
+      });
+      if (!used) this.notify(`📌 ${item.name} — нужен для задания.`);
+    } else {
+      // Try quest progress anyway
+      let questUsed = false;
+      Object.values(game.quests.active).forEach(aq => {
+        if (questUsed) return;
+        const qd = QUESTS[aq.id];
+        if (!qd) return;
+        const step = qd.steps[aq.stepIndex];
+        if (step && step.target === id) {
+          game.quests.progress('collect', id, 1, {});
+          this.notify(`✅ ${item.name} — использован!`);
+          game.inventory.remove(id);
+          questUsed = true;
+        }
+      });
+      if (!questUsed) this.notify(`📌 ${item.name} — это предмет для задания, береги его!`);
+    }
+    if (used) {
+      this._hideItemPanel();
+      this.renderInventory(game.inventory);
+      if (game.audio) game.audio.pickup();
+      if (game.telegram) game.telegram.haptic('medium');
     }
   }
   renderQuests(questSys) {
@@ -2599,7 +2685,8 @@ class World {
 
     // World items
     worldItems.filter(i=>!i.collected).forEach(wi => {
-      const item = ITEMS[wi.item];
+      const _wid = wi.itemId || wi.item;
+      const item = ITEMS[_wid];
       if (!item) return;
       const pulse = 1 + Math.sin(frame*0.1 + wi.x)*0.08;
       ctx.save();
@@ -2619,15 +2706,16 @@ class World {
     });
 
     // NPCs (sorted by y for depth)
-    const allNPCs = [...Object.values(npcs)].sort((a,b)=>a.y-b.y);
+    const allNPCs = [...npcs].sort((a,b)=>(a.currentY||a.y)-(b.currentY||b.y));
     allNPCs.forEach(npc => {
       const data = NPC_DATA[npc.id];
       if (!data) return;
-      // Check schedule visibility
       const sched = data.schedule?.[tod];
       if (sched === 'none' || (sched === 'inside' && tod === 'night')) return;
-      if (data.isAnimal) Draw.drawAnimalNPC(ctx, npc, frame);
-      else Draw.drawHumanNPC(ctx, npc, frame);
+      // Use currentX/currentY for position, merge into draw object
+      const drawNpc = { ...npc, x: npc.currentX || npc.x, y: npc.currentY || npc.y };
+      if (data.isAnimal) Draw.drawAnimalNPC(ctx, drawNpc, frame);
+      else Draw.drawHumanNPC(ctx, drawNpc, frame);
     });
 
     // Player (sorted relative to NPCs)
@@ -3117,71 +3205,103 @@ class Game {
   }
 
   _setupButtons() {
-    // Main menu buttons
-    const btnNew = document.getElementById('btn-new-game');
-    const btnContinue = document.getElementById('btn-continue');
-    const btnSettings = document.getElementById('btn-settings') || document.getElementById('btn-settings-menu');
-    const btnAbout = document.getElementById('btn-about');
-
-    if (btnNew) btnNew.onclick = () => { this.audio.uiClick(); this._startNew(); };
-    if (btnContinue) btnContinue.onclick = () => { this.audio.uiClick(); this._loadAndStart(); };
-    if (btnSettings) btnSettings.onclick = () => { this.audio.uiClick(); this.ui.openScreen('settings'); };
-    if (btnAbout) btnAbout.onclick = () => { this.audio.uiClick(); this.ui.openScreen('about'); };
-
-    // Pause menu
-    const btnResume = document.getElementById('btn-resume');
-    const btnSave = document.getElementById('btn-save');
-    const btnMainMenu = document.getElementById('btn-main-menu');
-    const btnReset = document.getElementById('btn-reset');
-
-    if (btnResume) btnResume.onclick = () => { this.audio.uiClick(); this.paused = false; this.ui.closeScreen('pause'); };
-    if (btnSave) btnSave.onclick = () => { this.audio.uiClick(); this._saveGame(); this.ui.notify('💾 Игра сохранена!'); };
-    if (btnMainMenu) btnMainMenu.onclick = () => { this.audio.uiClick(); this._goMainMenu(); };
-    if (btnReset) btnReset.onclick = () => {
-      if (confirm('Сбросить весь прогресс?')) {
-        this.save.reset();
-        this.audio.uiClick();
-        location.reload();
-      }
+    // iOS-safe tap handler: use both touchend and click, prevent double-fire
+    const tap = (el, fn) => {
+      if (!el) return;
+      let touched = false;
+      el.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        touched = true;
+        fn();
+        setTimeout(() => { touched = false; }, 400);
+      }, { passive: false });
+      el.addEventListener('click', (e) => {
+        if (!touched) fn();
+      });
     };
 
-    // HUD buttons
-    const btnPause = document.getElementById('btn-pause');
-    const btnMap = document.getElementById('btn-map');
-    const btnInv = document.getElementById('btn-inventory');
-    const btnQuests = document.getElementById('btn-quests');
-    const btnMeow = document.getElementById('btn-meow');
-    const btnAction = document.getElementById('btn-action');
+    // Main menu
+    tap(document.getElementById('btn-new-game'),  () => { if(this.audio)this.audio.uiClick(); this._startNew(); });
+    tap(document.getElementById('btn-continue'),  () => { if(this.audio)this.audio.uiClick(); this._loadAndStart(); });
+    tap(document.getElementById('btn-settings'),  () => { if(this.audio)this.audio.uiClick(); this.ui.openScreen('settings'); });
+    tap(document.getElementById('btn-about'),     () => { if(this.audio)this.audio.uiClick(); this.ui.openScreen('about'); });
 
-    if (btnPause) btnPause.onclick = () => { this.audio.uiClick(); this.paused = !this.paused; if (this.paused) this.ui.openScreen('pause'); else this.ui.closeScreen('pause'); };
-    if (btnMap) btnMap.onclick = () => { this.audio.uiClick(); this.ui.renderMap(ZONES, this.openedZones, this.player.x, this.player.y, this.npcs); this.ui.openScreen('map'); };
-    if (btnInv) btnInv.onclick = () => { this.audio.uiClick(); this.ui.renderInventory(this.inventory, ITEMS); this.ui.openScreen('inventory'); };
-    if (btnQuests) btnQuests.onclick = () => { this.audio.uiClick(); this.ui.renderQuests(this.quests); this.ui.openScreen('quests'); };
-    if (btnMeow) btnMeow.onclick = () => { this._doMeow(); };
-    if (btnAction) btnAction.onclick = () => { this._doAction(); };
-
-    // Settings
-    // Close buttons with data-close attribute
-    document.querySelectorAll('[data-close]').forEach(btn => {
-      btn.onclick = () => {
-        if (this.audio) this.audio.uiClick();
-        const screen = btn.dataset.close;
-        if (screen) this.ui.closeScreen(screen);
-      };
+    // Pause
+    tap(document.getElementById('btn-resume'),    () => { if(this.audio)this.audio.uiClick(); this.paused=false; this.ui.closeScreen('pause'); });
+    tap(document.getElementById('btn-save'),      () => { if(this.audio)this.audio.uiClick(); this._saveGame(); this.ui.notify('💾 Игра сохранена!'); });
+    tap(document.getElementById('btn-main-menu'), () => { if(this.audio)this.audio.uiClick(); this._goMainMenu(); });
+    tap(document.getElementById('btn-settings2'), () => { if(this.audio)this.audio.uiClick(); this.ui.openScreen('settings'); });
+    tap(document.getElementById('btn-reset'),     () => {
+      if (confirm('Сбросить весь прогресс?')) { this.save.reset(); location.reload(); }
     });
 
-    // Pause settings button
-    const btnSettings2 = document.getElementById('btn-settings2');
-    if (btnSettings2) btnSettings2.onclick = () => { if (this.audio) this.audio.uiClick(); this.ui.openScreen('settings'); };
+    // HUD buttons
+    tap(document.getElementById('btn-pause'),     () => {
+      if(this.audio)this.audio.uiClick();
+      this.paused = !this.paused;
+      if (this.paused) this.ui.openScreen('pause'); else this.ui.closeScreen('pause');
+    });
+    tap(document.getElementById('btn-map'),       () => { if(this.audio)this.audio.uiClick(); this.ui.renderMap(ZONES, this.openedZones, this.player.x, this.player.y, this.npcs); this.ui.openScreen('map'); });
+    tap(document.getElementById('btn-inventory'), () => { if(this.audio)this.audio.uiClick(); this.ui.renderInventory(this.inventory, ITEMS); this.ui.openScreen('inventory'); });
+    tap(document.getElementById('btn-quests'),    () => { if(this.audio)this.audio.uiClick(); this.ui.renderQuests(this.quests); this.ui.openScreen('quests'); });
+    tap(document.getElementById('btn-meow'),      () => { this._doMeow(); });
+    tap(document.getElementById('btn-action'),    () => { this._doAction(); });
 
-    const volMusic = document.getElementById('vol-music') || document.getElementById('set-music');
-    const volSfx = document.getElementById('vol-sfx') || document.getElementById('set-sfx');
-    if (volMusic) volMusic.oninput = (e) => { if (this.audio) this.audio.musicVolume = e.target.value / 100; };
-    if (volSfx) volSfx.oninput = (e) => { if (this.audio) this.audio.sfxVolume = e.target.value / 100; };
+    // Close buttons
+    document.querySelectorAll('[data-close]').forEach(btn => {
+      tap(btn, () => {
+        if(this.audio)this.audio.uiClick();
+        this.ui.closeScreen(btn.dataset.close);
+      });
+    });
+
+    // Quest tabs
+    document.querySelectorAll('.quest-tab').forEach(tab => {
+      tap(tab, () => {
+        document.querySelectorAll('.quest-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        this.ui.renderQuests(this.quests);
+      });
+    });
+
+    // Settings sliders
+    const volMusic = document.getElementById('set-music');
+    const volSfx   = document.getElementById('set-sfx');
+    if (volMusic) volMusic.oninput = (e) => { if(this.audio) this.audio.musicVolume = e.target.value/100; };
+    if (volSfx)   volSfx.oninput   = (e) => { if(this.audio) this.audio.sfxVolume   = e.target.value/100; };
 
     // Dialogue tap
-    const dlg = document.getElementById('screen-dialogue');
-    if (dlg) dlg.onclick = () => { if (this.dialogue) this.dialogue.advance(); };
+    const dlgBox = document.getElementById('dialogue-box');
+    if (dlgBox) {
+      tap(dlgBox, () => { if(this.dialogue) this.dialogue.advance(); });
+    }
+    const dlgScr = document.getElementById('screen-dialogue');
+    if (dlgScr) tap(dlgScr, () => { if(this.dialogue) this.dialogue.advance(); });
+
+    // Inventory item use panel
+    tap(document.getElementById('btn-use-item'),    () => { this.ui._useSelectedItem(this); });
+    tap(document.getElementById('btn-cancel-item'), () => { this.ui._hideItemPanel(); });
+
+    // Minigame close
+    tap(document.getElementById('btn-minigame-close'), () => { if(this.minigame) this.minigame.close(); });
+
+    // Draw title screen cat
+    this._drawTitleCat();
+  }
+
+  _drawTitleCat() {
+    const tc = document.getElementById('title-canvas');
+    if (!tc) return;
+    const ctx = tc.getContext('2d');
+    const w = tc.width, h = tc.height;
+    // Background circle
+    const bg = ctx.createRadialGradient(w/2,h/2,0,w/2,h/2,w/2);
+    bg.addColorStop(0,'#2d5a1b');
+    bg.addColorStop(1,'#0a1a0a');
+    ctx.fillStyle = bg;
+    ctx.beginPath(); ctx.arc(w/2,h/2,w/2,0,Math.PI*2); ctx.fill();
+    // Draw cat
+    Draw.drawCat(ctx, w/2, h-8, 1, 0, false, true, false, 1.6);
   }
 
   _setupTelegramButtons() {
@@ -3516,7 +3636,7 @@ class Game {
     this.player.stats.curiosity = Math.min(100, this.player.stats.curiosity + 3);
 
     // Quest progress
-    this.quests.active.forEach(aq => {
+    Object.values(this.quests.active).forEach(aq => {
       const qdata = QUESTS[aq.id];
       if (qdata?.collectItem === wi.itemId) {
         this.quests.progress('collect', wi.itemId, 1, {});
@@ -3665,7 +3785,7 @@ class Game {
       const dx = wi.x - this.player.x;
       const dy = wi.y - this.player.y;
       const dist = Math.sqrt(dx*dx + dy*dy);
-      if (dist < nearestDist) { nearestDist = dist; nearest = { type: 'item', name: ITEMS[wi.itemId]?.name || wi.itemId }; }
+      if (dist < nearestDist) { const _iid = wi.itemId || wi.item; nearestDist = dist; nearest = { type: 'item', name: ITEMS[_iid]?.name || _iid }; }
     });
 
     WORLD_OBJECTS.forEach(obj => {
@@ -3695,7 +3815,7 @@ class Game {
           this.openedZones.push(zone.id);
           this.ui.notify(`🗺 Открыта новая зона: ${zone.name}!`);
           if (this.achievements) this.achievements.check('explorer', this);
-          this.quests.active.forEach(aq => {
+          Object.values(this.quests.active).forEach(aq => {
             if (QUESTS[aq.id]?.unlockZone === zone.id) this.quests.progress(aq.id, this);
           });
         }
