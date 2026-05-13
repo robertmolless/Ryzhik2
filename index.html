@@ -66,8 +66,8 @@ button{cursor:pointer;border:none;outline:none;font-family:inherit;-webkit-appea
 #title-canvas{border-radius:50%;box-shadow:0 0 40px rgba(255,180,60,0.4),0 0 80px rgba(255,180,60,0.15)}
 .game-title h1{font-size:42px;font-weight:800;color:#fff;text-shadow:0 0 30px rgba(255,200,80,0.6),0 2px 8px rgba(0,0,0,0.8);letter-spacing:2px}
 .game-title .subtitle{color:rgba(200,230,160,0.8);font-size:14px;letter-spacing:1px}
-.menu-buttons{display:flex;flex-direction:column;gap:12px;width:100%}
-.menu-btn{width:100%;padding:15px 20px;border-radius:16px;font-size:16px;font-weight:600;color:#fff;background:rgba(255,255,255,0.1);border:2px solid rgba(255,255,255,0.2);backdrop-filter:blur(8px);cursor:pointer;transition:transform 0.15s,background 0.15s;-webkit-tap-highlight-color:transparent;touch-action:manipulation;letter-spacing:0.5px}
+.menu-buttons{display:flex;flex-direction:column;gap:12px;width:100%;pointer-events:auto}
+.menu-btn{width:100%;padding:15px 20px;border-radius:16px;font-size:16px;font-weight:600;color:#fff;background:rgba(255,255,255,0.1);border:2px solid rgba(255,255,255,0.2);backdrop-filter:blur(8px);cursor:pointer;transition:transform 0.15s,background 0.15s;-webkit-tap-highlight-color:transparent;touch-action:manipulation;letter-spacing:0.5px;pointer-events:auto;position:relative;z-index:1}
 .menu-btn:active{transform:scale(0.95);background:rgba(255,255,255,0.18)}
 .menu-btn.primary{background:linear-gradient(135deg,rgba(80,160,80,0.9),rgba(40,120,60,0.9));border-color:rgba(120,220,120,0.4);box-shadow:0 4px 20px rgba(60,160,80,0.3)}
 .menu-btn.danger{background:rgba(180,40,40,0.6);border-color:rgba(255,80,80,0.3)}
@@ -358,6 +358,6 @@ button{cursor:pointer;border:none;outline:none;font-family:inherit;-webkit-appea
 
   <div id="toast"></div>
 </div>
-<script src="game.js"></script>
+<script src="game.js?v=2"></script>
 </body>
 </html>

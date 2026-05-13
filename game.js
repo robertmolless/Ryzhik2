@@ -3099,22 +3099,27 @@ class Game {
     this.targetFPS = 60;
     this._rafId = null;
 
-    // Systems
-    this.telegram = new TelegramBridge();
-    this.audio = new AudioSystem();
-    this.save = new SaveSystem();
-    this.input = new Input();
-    this.time = new TimeSystem();
-    this.weather = new WeatherSystem();
-    this.camera = new Camera(2800, 1800);
-    this.player = new Player(700, 500);
-    this.inventory = new Inventory();
-    this.quests = new QuestSystem();
-    this.dialogue = new DialogueSystem();
-    this.achievements = new AchievementSystem();
-    this.ui = new UIManager();
-    this.world = new World();
-    this.minigame = new MiniGameSystem();
+    // Systems — each wrapped so a single failing subsystem does not stop the
+    // rest of the game from initialising (especially the menu buttons).
+    const safeInit = (label, factory, fallback = null) => {
+      try { return factory(); }
+      catch (err) { console.error('[init:' + label + ']', err); return fallback; }
+    };
+    this.telegram    = safeInit('telegram',    () => new TelegramBridge(),     { available:false, vibrate(){}, showMainButton(){}, hideMainButton(){}, showBackButton(){}, hideBackButton(){}, onBackButton(){}, haptic(){} });
+    this.audio       = safeInit('audio',       () => new AudioSystem(),        { enabled:false, musicVolume:0, sfxVolume:0, uiClick(){}, meow(){}, purr(){}, pickup(){}, questComplete(){}, step(){}, startAmbience(){} });
+    this.save        = safeInit('save',        () => new SaveSystem());
+    this.input       = safeInit('input',       () => new Input());
+    this.time        = safeInit('time',        () => new TimeSystem());
+    this.weather     = safeInit('weather',     () => new WeatherSystem());
+    this.camera      = safeInit('camera',      () => new Camera(2800, 1800));
+    this.player      = safeInit('player',      () => new Player(700, 500));
+    this.inventory   = safeInit('inventory',   () => new Inventory());
+    this.quests      = safeInit('quests',      () => new QuestSystem());
+    this.dialogue    = safeInit('dialogue',    () => new DialogueSystem());
+    this.achievements= safeInit('achievements',() => new AchievementSystem());
+    this.ui          = safeInit('ui',          () => new UIManager());
+    this.world       = safeInit('world',       () => new World());
+    this.minigame    = safeInit('minigame',    () => new MiniGameSystem());
 
     // Cross-references
     this.quests.ui = this.ui;
@@ -3132,7 +3137,9 @@ class Game {
     this.minigame.ui = this.ui;
     this.minigame.audio = this.audio;
 
-    this.mobile = new MobileControls();
+    this.mobile = safeInit('mobile', () => new MobileControls(), {
+      getMoveDir(){ return {x:0,y:0}; }, wasPressed(){ return false; }, clearJust(){}, joy:{active:false}
+    });
 
     // NPC state
     this.npcs = Object.keys(NPC_DATA).map(id => ({
@@ -3168,11 +3175,11 @@ class Game {
     this.storyProgress = 0;
     this.endingShown = false;
 
-    // Setup
-    this._setupResize();
-    this._setupButtons();
-    this._setupTelegramButtons();
-    this._checkSave();
+    // Setup — buttons must be wired even if other init steps fail.
+    try { this._setupResize(); }         catch (e) { console.error('[setupResize]', e); }
+    try { this._setupButtons(); }        catch (e) { console.error('[setupButtons]', e); }
+    try { this._setupTelegramButtons();} catch (e) { console.error('[setupTelegramButtons]', e); }
+    try { this._checkSave(); }           catch (e) { console.error('[checkSave]', e); }
   }
 
   _setupResize() {
@@ -3186,11 +3193,34 @@ class Game {
   }
 
   _setupButtons() {
-    // Simple, reliable button handler for iOS and desktop
+    // Robust button handler: uses click + touchend + pointerup fallback so it
+    // works on desktop, iOS Safari, Android, and Telegram WebView. Guards
+    // against duplicate firing within a short window, and isolates errors so
+    // one broken handler does not break the rest of the menu.
+    const safe = (label, fn) => {
+      try { fn(); }
+      catch (err) {
+        console.error('[btn:' + label + ']', err);
+        try { this.ui && this.ui.notify && this.ui.notify('⚠ Ошибка: ' + (err.message || err)); } catch(_) {}
+      }
+    };
     const on = (id, fn) => {
       const el = document.getElementById(id);
-      if (!el) return;
-      el.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
+      if (!el) { console.warn('[btn] missing #' + id); return; }
+      let lastFire = 0;
+      const handler = (e) => {
+        if (e) {
+          if (typeof e.stopPropagation === 'function') e.stopPropagation();
+          if (e.type === 'touchend' && typeof e.preventDefault === 'function') e.preventDefault();
+        }
+        const now = Date.now();
+        if (now - lastFire < 350) return; // dedupe between click & touchend
+        lastFire = now;
+        safe(id, fn);
+      };
+      el.addEventListener('click', handler);
+      el.addEventListener('touchend', handler, { passive: false });
+      el.addEventListener('pointerup', handler);
     };
 
     // Main menu
@@ -3974,6 +4004,38 @@ class Game {
 // ============================================================
 // BOOT
 // ============================================================
-window.addEventListener('DOMContentLoaded', () => {
-  window.game = new Game();
+function _showBootError(err) {
+  console.error('[BOOT]', err);
+  try {
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;left:8px;right:8px;top:8px;z-index:9999;background:rgba(180,30,30,0.95);color:#fff;font:13px/1.4 system-ui;padding:10px 14px;border-radius:10px;border:1.5px solid rgba(255,255,255,0.3);box-shadow:0 4px 20px rgba(0,0,0,0.5);white-space:pre-wrap;word-break:break-word';
+    box.textContent = '⚠ Ошибка загрузки игры:\n' + (err && (err.message || err.toString()) || 'unknown');
+    document.body.appendChild(box);
+  } catch (_) {}
+}
+
+window.addEventListener('error', (ev) => {
+  if (!window.game || !window.game.gameStarted) _showBootError(ev.error || ev.message);
 });
+window.addEventListener('unhandledrejection', (ev) => {
+  if (!window.game || !window.game.gameStarted) _showBootError(ev.reason);
+});
+
+function _bootGame() {
+  try {
+    window.game = new Game();
+  } catch (err) {
+    _showBootError(err);
+    // Best-effort: at least wire the "Новая игра" button so the user gets feedback
+    const btn = document.getElementById('btn-new-game');
+    if (btn) btn.addEventListener('click', () => {
+      _showBootError(err);
+    });
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _bootGame);
+} else {
+  _bootGame();
+}
