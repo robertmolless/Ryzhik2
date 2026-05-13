@@ -40,6 +40,13 @@ class TelegramBridge {
   hideBackButton() {
     if (this.available) this.tg.BackButton.hide();
   }
+  onBackButton(cb) {
+    if (this.available) this.tg.BackButton.show(), this.tg.BackButton.onClick(cb);
+  }
+  haptic(type='light') {
+    if (this.available) this.tg.HapticFeedback?.impactOccurred(type);
+    else if (navigator.vibrate) navigator.vibrate(type==='success'?[30,20,30]:type==='medium'?[20]:[10]);
+  }
 }
 
 // ============================================================
@@ -122,19 +129,19 @@ class AudioSystem {
 // SAVE SYSTEM
 // ============================================================
 class SaveSystem {
-  static KEY = 'ryzhik_save_v3';
-  static save(data) {
+  constructor() { this.KEY = 'ryzhik_save_v3'; }
+  save(data) {
     try { localStorage.setItem(this.KEY, JSON.stringify(data)); return true; }
     catch(e) { return false; }
   }
-  static load() {
+  load() {
     try {
       const s = localStorage.getItem(this.KEY);
       return s ? JSON.parse(s) : null;
     } catch(e) { return null; }
   }
-  static reset() { localStorage.removeItem(this.KEY); }
-  static exists() { return !!localStorage.getItem(this.KEY); }
+  reset() { try { localStorage.removeItem(this.KEY); } catch(e){} }
+  exists() { try { return !!localStorage.getItem(this.KEY); } catch(e){ return false; } }
 }
 
 // ============================================================
@@ -1683,9 +1690,9 @@ class MobileControls {
     this._preventScroll();
   }
   _preventScroll() {
-    document.addEventListener('touchmove', e => e.preventDefault(), {passive:false});
-    document.addEventListener('touchstart', e => {
-      if (!e.target.closest('#screen-dialogue, #screen-inventory, #screen-quests, .screen-header, #quest-list, #inventory-grid, .settings-list, #achievements-grid, .about-content')) {
+    // Only prevent scroll on game canvas and joystick zone
+    document.addEventListener('touchmove', e => {
+      if (e.target.closest('#joystick-zone, #gameCanvas')) {
         e.preventDefault();
       }
     }, {passive:false});
@@ -1736,24 +1743,7 @@ class MobileControls {
     };
   }
   _setupButtons() {
-    const btnMap = {
-      'btn-meow':'meow','btn-action':'action',
-      'btn-map':'map','btn-inventory':'inventory',
-      'btn-quests':'quests','btn-pause':'pause',
-    };
-    Object.entries(btnMap).forEach(([id, action]) => {
-      const el = document.getElementById(id);
-      if (!el) return;
-      const onDown = () => {
-        this.btns[action] = true;
-        this.justTapped[action] = true;
-      };
-      const onUp = () => { this.btns[action] = false; };
-      el.addEventListener('touchstart', onDown, {passive:true});
-      el.addEventListener('touchend', onUp, {passive:true});
-      el.addEventListener('pointerdown', onDown);
-      el.addEventListener('pointerup', onUp);
-    });
+    // Intentionally empty - Game class handles all button logic via tap()
   }
   wasPressed(action) {
     if (this.justTapped[action]) { delete this.justTapped[action]; return true; }
@@ -2111,7 +2101,8 @@ class DialogueSystem {
     this.audio = audio;
     this.questSys = questSys;
     this.active = false;
-    this.queue = [];
+    this._lines = [];
+    this._pendingLines = [];
     this.currentNPC = null;
     this.onClose = null;
     this._setupUI();
@@ -2125,7 +2116,7 @@ class DialogueSystem {
   open(npcId, dialogs, onClose) {
     this.active = true;
     this.currentNPC = npcId;
-    this.queue = [...dialogs];
+    this._lines = [...dialogs];
     this.onClose = onClose;
     const npc = NPC_DATA[npcId];
     document.getElementById('dialogue-name').textContent = npc?.name || 'Рыжик';
@@ -2145,8 +2136,8 @@ class DialogueSystem {
     this.questSys?.checkTrigger(`talk:${npcId}`);
   }
   _showNext() {
-    if (!this.queue.length) { this.close(); return; }
-    const line = this.queue.shift();
+    if (!this._lines || !this._lines.length) { this.close(); return; }
+    const line = this._lines.shift();
     const el = document.getElementById('dialogue-text');
     if (el) {
       el.textContent = '';
@@ -2445,7 +2436,7 @@ class UIManager {
       : questSys.getActiveQuests().map(aq=>({...QUESTS[aq.id],...aq}));
     quests.forEach(q => {
       const el = document.createElement('div');
-      el.className = 'quest-item' + (questSys.completed.includes && questSys.completed.includes(q.id) ? ' completed' : '');
+      el.className = 'quest-item' + (questSys.completed.has(q.id) ? ' completed' : '');
       const prog = questSys.getStepProgress(q.id);
       const curStep = QUESTS[q.id]?.steps[q.stepIndex];
       el.innerHTML = `
@@ -2561,17 +2552,7 @@ class UIManager {
     if (hud) hud.style.display = 'block';
   }
   _setupButtons() {
-    // Close buttons
-    document.querySelectorAll('.close-btn[data-close]').forEach(btn => {
-      btn.addEventListener('click', () => this.closeScreen());
-    });
-    // Quest tabs
-    document.querySelectorAll('.quest-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('.quest-tab').forEach(t=>t.classList.remove('active'));
-        tab.classList.add('active');
-      });
-    });
+    // Handled by Game._setupButtons() to avoid double-binding
   }
 }
 
@@ -3205,51 +3186,42 @@ class Game {
   }
 
   _setupButtons() {
-    // iOS-safe tap handler: use both touchend and click, prevent double-fire
-    const tap = (el, fn) => {
+    // Simple, reliable button handler for iOS and desktop
+    const on = (id, fn) => {
+      const el = document.getElementById(id);
       if (!el) return;
-      let touched = false;
-      el.addEventListener('touchend', (e) => {
-        e.preventDefault();
-        touched = true;
-        fn();
-        setTimeout(() => { touched = false; }, 400);
-      }, { passive: false });
-      el.addEventListener('click', (e) => {
-        if (!touched) fn();
-      });
+      el.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
     };
 
     // Main menu
-    tap(document.getElementById('btn-new-game'),  () => { if(this.audio)this.audio.uiClick(); this._startNew(); });
-    tap(document.getElementById('btn-continue'),  () => { if(this.audio)this.audio.uiClick(); this._loadAndStart(); });
-    tap(document.getElementById('btn-settings'),  () => { if(this.audio)this.audio.uiClick(); this.ui.openScreen('settings'); });
-    tap(document.getElementById('btn-about'),     () => { if(this.audio)this.audio.uiClick(); this.ui.openScreen('about'); });
+    on('btn-new-game',  () => { if(this.audio)this.audio.uiClick(); this._startNew(); });
+    on('btn-continue',  () => { if(this.audio)this.audio.uiClick(); this._loadAndStart(); });
+    on('btn-settings',  () => { if(this.audio)this.audio.uiClick(); this.ui.openScreen('settings'); });
+    on('btn-about',     () => { if(this.audio)this.audio.uiClick(); this.ui.openScreen('about'); });
 
     // Pause
-    tap(document.getElementById('btn-resume'),    () => { if(this.audio)this.audio.uiClick(); this.paused=false; this.ui.closeScreen('pause'); });
-    tap(document.getElementById('btn-save'),      () => { if(this.audio)this.audio.uiClick(); this._saveGame(); this.ui.notify('💾 Игра сохранена!'); });
-    tap(document.getElementById('btn-main-menu'), () => { if(this.audio)this.audio.uiClick(); this._goMainMenu(); });
-    tap(document.getElementById('btn-settings2'), () => { if(this.audio)this.audio.uiClick(); this.ui.openScreen('settings'); });
-    tap(document.getElementById('btn-reset'),     () => {
-      if (confirm('Сбросить весь прогресс?')) { this.save.reset(); location.reload(); }
-    });
+    on('btn-resume',    () => { if(this.audio)this.audio.uiClick(); this.paused=false; this.ui.closeScreen('pause'); });
+    on('btn-save',      () => { if(this.audio)this.audio.uiClick(); this._saveGame(); this.ui.notify('💾 Игра сохранена!'); });
+    on('btn-main-menu', () => { if(this.audio)this.audio.uiClick(); this._goMainMenu(); });
+    on('btn-settings2', () => { if(this.audio)this.audio.uiClick(); this.ui.openScreen('settings'); });
+    on('btn-reset',     () => { if(confirm('Сбросить прогресс?')){ this.save.reset(); location.reload(); } });
 
-    // HUD buttons
-    tap(document.getElementById('btn-pause'),     () => {
+    // HUD
+    on('btn-pause',     () => {
       if(this.audio)this.audio.uiClick();
       this.paused = !this.paused;
-      if (this.paused) this.ui.openScreen('pause'); else this.ui.closeScreen('pause');
+      if(this.paused) this.ui.openScreen('pause'); else this.ui.closeScreen('pause');
     });
-    tap(document.getElementById('btn-map'),       () => { if(this.audio)this.audio.uiClick(); this.ui.renderMap(ZONES, this.openedZones, this.player.x, this.player.y, this.npcs); this.ui.openScreen('map'); });
-    tap(document.getElementById('btn-inventory'), () => { if(this.audio)this.audio.uiClick(); this.ui.renderInventory(this.inventory, ITEMS); this.ui.openScreen('inventory'); });
-    tap(document.getElementById('btn-quests'),    () => { if(this.audio)this.audio.uiClick(); this.ui.renderQuests(this.quests); this.ui.openScreen('quests'); });
-    tap(document.getElementById('btn-meow'),      () => { this._doMeow(); });
-    tap(document.getElementById('btn-action'),    () => { this._doAction(); });
+    on('btn-map',       () => { if(this.audio)this.audio.uiClick(); this.ui.renderMap(ZONES, this.openedZones, this.player.x, this.player.y, this.npcs); this.ui.openScreen('map'); });
+    on('btn-inventory', () => { if(this.audio)this.audio.uiClick(); this.ui.renderInventory(this.inventory, ITEMS); this.ui.openScreen('inventory'); });
+    on('btn-quests',    () => { if(this.audio)this.audio.uiClick(); this.ui.renderQuests(this.quests); this.ui.openScreen('quests'); });
+    on('btn-meow',      () => { this._doMeow(); });
+    on('btn-action',    () => { this._doAction(); });
 
-    // Close buttons
+    // Close buttons with data-close
     document.querySelectorAll('[data-close]').forEach(btn => {
-      tap(btn, () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         if(this.audio)this.audio.uiClick();
         this.ui.closeScreen(btn.dataset.close);
       });
@@ -3257,7 +3229,7 @@ class Game {
 
     // Quest tabs
     document.querySelectorAll('.quest-tab').forEach(tab => {
-      tap(tab, () => {
+      tab.addEventListener('click', () => {
         document.querySelectorAll('.quest-tab').forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
         this.ui.renderQuests(this.quests);
@@ -3270,22 +3242,18 @@ class Game {
     if (volMusic) volMusic.oninput = (e) => { if(this.audio) this.audio.musicVolume = e.target.value/100; };
     if (volSfx)   volSfx.oninput   = (e) => { if(this.audio) this.audio.sfxVolume   = e.target.value/100; };
 
-    // Dialogue tap
+    // Dialogue
     const dlgBox = document.getElementById('dialogue-box');
-    if (dlgBox) {
-      tap(dlgBox, () => { if(this.dialogue) this.dialogue.advance(); });
-    }
-    const dlgScr = document.getElementById('screen-dialogue');
-    if (dlgScr) tap(dlgScr, () => { if(this.dialogue) this.dialogue.advance(); });
+    if (dlgBox) dlgBox.addEventListener('click', () => { if(this.dialogue) this.dialogue.advance(); });
 
-    // Inventory item use panel
-    tap(document.getElementById('btn-use-item'),    () => { this.ui._useSelectedItem(this); });
-    tap(document.getElementById('btn-cancel-item'), () => { this.ui._hideItemPanel(); });
+    // Inventory use panel
+    on('btn-use-item',    () => { this.ui._useSelectedItem(this); });
+    on('btn-cancel-item', () => { this.ui._hideItemPanel(); });
 
     // Minigame close
-    tap(document.getElementById('btn-minigame-close'), () => { if(this.minigame) this.minigame.close(); });
+    on('btn-minigame-close', () => { if(this.minigame) this.minigame.close(); });
 
-    // Draw title screen cat
+    // Title cat
     this._drawTitleCat();
   }
 
@@ -3305,17 +3273,19 @@ class Game {
   }
 
   _setupTelegramButtons() {
-    this.telegram.onBackButton(() => {
-      if (this.ui.activeScreen) {
-        this.ui.closeScreen(this.ui.activeScreen);
-      } else if (this.paused) {
-        this.paused = false;
-        this.ui.closeScreen('pause');
-      } else if (this.gameStarted) {
-        this.paused = true;
-        this.ui.openScreen('pause');
-      }
-    });
+    try {
+      this.telegram.onBackButton(() => {
+        if (this.ui.activeScreen) {
+          this.ui.closeScreen(this.ui.activeScreen);
+        } else if (this.paused) {
+          this.paused = false;
+          this.ui.closeScreen('pause');
+        } else if (this.gameStarted) {
+          this.paused = true;
+          this.ui.openScreen('pause');
+        }
+      });
+    } catch(e) { /* Telegram not available */ }
   }
 
   _checkSave() {
@@ -3614,7 +3584,7 @@ class Game {
 
     // Quest trigger
     const q = QUESTS[npc.quest];
-    if (q && !this.quests.completed.includes(npc.quest) && !this.quests.active[npc.quest]) {
+    if (q && !this.quests.completed.has(npc.quest) && !this.quests.active[npc.quest]) {
       if (npc.trustLevel >= 10) {
         setTimeout(() => {
           this.quests.start(npc.quest);
@@ -3833,11 +3803,11 @@ class Game {
       this.storyProgress = 2;
       this.dialogue.queue([{ speaker: 'ryzhik', text: 'Все говорят о старой теплице. Что же там внутри?', portrait: 'ryzhik' }]);
     }
-    if (this.quests.completed.includes('open_greenhouse') && this.storyProgress < 4) {
+    if (this.quests.completed.has('open_greenhouse') && this.storyProgress < 4) {
       this.storyProgress = 4;
       this.quests.start('sun_bell_quest');
     }
-    if (this.quests.completed.includes('sun_bell_quest') && !this.endingShown) {
+    if (this.quests.completed.has('sun_bell_quest') && !this.endingShown) {
       this._triggerEnding();
     }
   }
